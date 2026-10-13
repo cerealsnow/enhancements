@@ -2,15 +2,15 @@
 
 ## Summary
 
-With the `OpenTelemetryCollector` feature gate, Gardener deploys an `OpenTelemetryCollector` per shoot control plane namespace and one in the `garden` namespace of seeds and of the garden runtime cluster. Per [GEP-34](../0034-observability2.0-opentelemetry/README.md), these collectors are the abstraction layer for observability signals, which makes them a stable entry point for operators.
-
-What is missing is a supported way for operators to hook into the collector configuration. It is fully owned by Gardener, so an operator who wants to route the collected signals to a custom backend or use custom processors has no extension point.
-
 This GEP proposes a new extension `gardener-extension-observability-config` of type `observability` in the Gardener GitHub organization. It deploys a mutating admission webhook which injects additional configuration into the `OpenTelemetryCollector` resources Gardener deploys. The injected configuration adds pipelines that reuse the receivers Gardener already configures and reference custom processors and exporters, without touching the pipelines Gardener configures. No additional collectors are deployed.
 
 The extension is configured via the `providerConfig` in the `Garden` and `Seed` resources. The `seed` class applies to all shoot control plane collectors on a seed without per-shoot configuration. Shoot owners keep using the existing [`gardener-extension-otelcol`](https://github.com/gardener/gardener-extension-otelcol) to export the signals of their control plane. For now this targets only logs, but the mechanism is signal-agnostic and covers metrics once Gardener routes them through the collectors.
 
 ## Motivation
+
+With the `OpenTelemetryCollector` feature gate, Gardener deploys an `OpenTelemetryCollector` per shoot control plane namespace and one in the `garden` namespace of seeds and of the garden runtime cluster. Per [GEP-34](../0034-observability2.0-opentelemetry/README.md), these collectors are the abstraction layer for observability signals, which makes them a stable entry point for operators.
+
+What is missing is a supported way for operators to hook into the collector configuration. It is fully owned by Gardener, so an operator who wants to route the collected signals to a custom backend or use custom processors has no extension point.
 
 Operators may have requirements for the signals collected in their setup that go beyond what Gardener provides out of the box. A common one may be shipping logs to a custom backend, for example a central log store outside of Gardener. Another one is processing logs before they leave the cluster, for example attaching landscape-specific attributes (e.g., the stage).
 
@@ -23,7 +23,6 @@ The existing `gardener-extension-otelcol` deploys an additional collector per sh
 - Introduce `gardener-extension-observability-config` as a new extension of type `observability` in the Gardener GitHub organization.
 - Allow operators to add custom configuration to the collectors Gardener deploys, reusing the receivers Gardener already configures.
 - Apply configuration at the `Garden` and `Seed` level, covering the `garden` namespace collectors and all shoot control plane collectors on a seed without per-shoot configuration.
-- Do not deploy additional collectors and do not touch the collector pipelines Gardener configures.
 - Keep the API signal-agnostic so that the same mechanism covers metrics and traces once Gardener routes them through the collectors.
 
 ### Non-Goals
@@ -32,6 +31,7 @@ The existing `gardener-extension-otelcol` deploys an additional collector per sh
 - Changing how Gardener collects or stores signals (fluent-bit, the `gardener` plugin).
 - Modelling the OpenTelemetry Collector configuration in a Gardener-specific API. The extension passes configuration fragments through and validates them.
 - Replacing `gardener-extension-otelcol`.
+- Deploying additional collectors or changing the collector pipelines Gardener configures.
 - Metrics and traces in the first iteration.
 
 ## Proposal
@@ -68,7 +68,7 @@ The `garden` class is configured in `Garden.spec.extensions[]` and covers the co
 apiVersion: operator.gardener.cloud/v1alpha1
 kind: Extension
 metadata:
-  name: extension-observability
+  name: observability
 spec:
   resources:
     - kind: Extension
@@ -77,21 +77,6 @@ spec:
       clusterCompatibility:
         - garden
         - seed
-  deployment:
-    extension:
-      helm:
-        ociRepository:
-          ref: <registry>/charts/gardener/extensions/observability:v0.1.0
-      policy: Always
-    admission:
-      runtimeCluster:
-        helm:
-          ociRepository:
-            ref: <registry>/charts/gardener/extensions/admission-observability-runtime:v0.1.0
-      virtualCluster:
-        helm:
-          ociRepository:
-            ref: <registry>/charts/gardener/extensions/admission-observability-application:v0.1.0
 ```
 
 With `policy: Always`, the extension is installed on every seed but only changes the collectors of seeds that list it in `Seed.spec.extensions[]`.
@@ -107,28 +92,28 @@ The `providerConfig` is of kind `ObservabilityConfig` in the API group `observab
 ```go
 // ObservabilityConfig is the providerConfig of the observability extension.
 type ObservabilityConfig struct {
- metav1.TypeMeta
+  metav1.TypeMeta
 
- // Collector configures what the webhook injects into the collectors.
- Collector *CollectorSpec
+  // Collector configures what the webhook injects into the collectors.
+  Collector *CollectorSpec
 }
 
 // CollectorSpec describes what is added to the collectors.
 type CollectorSpec struct {
- // Config is a piece of OpenTelemetry Collector configuration that is added
- // to .spec.config of the collectors. Allowed top-level keys are processors,
- // exporters, extensions, connectors and service. Under service, only
- // pipelines and extensions are allowed. Receivers cannot be configured.
- Config runtime.RawExtension
- // Secrets are names of entries in .spec.resources of the Garden or Seed.
- // Each listed secret is mounted into the collectors at
- // /etc/observability/<name>/. Config reads the files, e.g., via
- // ${file:/etc/observability/<name>/<key>}.
- Secrets []string
- // AllowPublicNetworks allows the collectors to reach public networks.
- AllowPublicNetworks bool
- // AllowPrivateNetworks allows the collectors to reach private networks.
- AllowPrivateNetworks bool
+  // Config is a piece of OpenTelemetry Collector configuration that is added
+  // to .spec.config of the collectors. Allowed top-level keys are processors,
+  // exporters, extensions, connectors and service. Under service, only
+  // pipelines and extensions are allowed. Receivers cannot be configured.
+  Config runtime.RawExtension
+  // Secrets are names of entries in .spec.resources of the Garden or Seed.
+  // Each listed secret is mounted into the collectors at
+  // /etc/observability/<name>/. Config reads the files, e.g., via
+  // ${file:/etc/observability/<name>/<key>}.
+  Secrets []string
+  // AllowPublicNetworks allows the collectors to reach public networks.
+  AllowPublicNetworks bool
+  // AllowPrivateNetworks allows the collectors to reach private networks.
+  AllowPrivateNetworks bool
 }
 ```
 
@@ -147,7 +132,7 @@ Credentials come from [referenced resources](https://github.com/gardener/gardene
 
 Operators only deal with entry names, so the `Garden` and `Seed` can use the same `providerConfig`.
 
-### Example
+#### Example
 
 The following `Seed` sends all logs of the seed to a central Loki via OTLP. A `resource` processor adds the attribute `stage` to every log. The Loki credentials come from the secret `central-loki-credentials`, which is referenced as `central-loki` in `.spec.resources`. `allowPublicNetworks` lets the collectors reach the Loki endpoint. A `Garden` uses the same `providerConfig` for the collector in the runtime cluster.
 
