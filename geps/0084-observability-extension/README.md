@@ -48,7 +48,7 @@ The `garden` class is configured in `Garden.spec.extensions[]` and covers the co
 
 ### Notes/Constraints/Caveats
 
-- Only processors, exporters, connectors and collector extensions contained in the [Gardener OpenTelemetry Collector distribution](https://github.com/gardener/opentelemetry-collector/blob/main/manifest.yml) can be configured, since the collector image only contains these components. Missing components are contributed to the distribution. A custom collector image is not supported.
+- Only processors, exporters, connectors and collector extensions contained in the [Gardener OpenTelemetry Collector distribution](https://github.com/gardener/opentelemetry-collector/blob/main/manifest.yml) can be configured, since the collector image only contains these components. Missing components are contributed to the distribution. Since the extension only acts on `Seed` and `Garden` level, operators can still replace the collector image with one that contains further components, e.g., the full `opentelemetry-collector-contrib` distribution. Gardener's own distribution exists to avoid deploying all contrib components by default.
 - Injected pipelines reference Gardener's receivers and exporters by name. Gardener should document these names as a stable interface for extensions (see [Required Changes in gardener/gardener](#required-changes-in-gardenergardener)).
 - The webhook only runs when the collector resource is written. When the `providerConfig` or a referenced secret changes, the extension controller first updates the secret copies and then sends an empty patch to the affected collectors. The patch triggers the webhook, which recomputes the hash in the pod annotations (see [Webhook](#webhook)). The same happens once the webhook becomes ready on a cluster, so collectors applied before the webhook existed are mutated as well.
 - All signals arriving at a collector are included. For a shoot control plane collector, these are the control plane logs, the logs of the Gardener-managed components in the shoot `kube-system` namespace and the logs of the shoot node systemd units.
@@ -57,8 +57,8 @@ The `garden` class is configured in `Garden.spec.extensions[]` and covers the co
 
 - An invalid configuration prevents the collector from starting, which stops all pipelines of the affected collector, including Gardener's. The extension validates the structure of the fragment before it is accepted and again on mutation (see [Validation](#validation)). Errors inside a component's configuration only show up when the collector starts.
 - A `Seed`-level change affects all shoot control plane collectors on the seed at once. A `Garden`-level change only affects the collector in the runtime cluster.
-- Injected pipelines share the receiver with Gardener's pipelines.
-- The webhook uses `failurePolicy: Fail`. With `Ignore`, an outage would drop the injected pipelines on the next apply. Signals would then stop reaching the custom backend without any error in the `Seed` or `Garden` status. With `Fail`, an outage blocks the apply of the collector and thereby the reconciliation of the `Garden`, the `Seed` and the shoots on that seed until the webhook is back. Since the extension is installed on every seed, this also applies to seeds without an `Extension` of type `observability`.
+- Injected pipelines share the receiver with Gardener's pipelines. Additional processors and exporters increase the resource consumption of the collector and can degrade its performance. A custom backend that is unavailable or misbehaves can degrade all pipelines of the collector, including Gardener's.
+- The webhook uses `failurePolicy: Fail`. With `Ignore`, an outage would drop the injected pipelines on the next apply. Signals would then stop reaching the custom backend without any error in the `Seed` or `Garden` status. With `Fail`, an outage blocks the apply of the collector and thereby the reconciliation of the `Garden`, the `Seed` and the shoots on that seed until the webhook is back. It also makes the health checks of the affected `ManagedResource`s fail, since `gardener-resource-manager` cannot apply them. Since the extension is installed on every seed, this also applies to seeds without an `Extension` of type `observability`.
 
 ## Design Details
 
@@ -208,7 +208,6 @@ The webhook mounts the secrets listed in `collector.secrets` read-only at `/etc/
 ### Required Changes in gardener/gardener
 
 - Document the name `opentelemetry-collector` of the `OpenTelemetryCollector` resource, its label `observability.gardener.cloud/app: opentelemetry-collector` and its receiver and exporter names as a stable interface for extensions.
-- Only configure the exporters `loki` and `otlphttp/victorialogs` if their backend is enabled. Today only the pipelines `logs/vali` and `logs/victorialogs` are conditional. The exporters are always configured, even if `RemoveVali` is enabled or `VictoriaLogsBackend` is disabled.
 
 ## Drawbacks
 
@@ -226,7 +225,7 @@ For shoot owners, `gardener-extension-otelcol` stays the way to export signals o
 
 ### Deploy a dedicated operator-owned collector
 
-An additional collector per seed or per shoot control plane would need either an additional fluent-bit output or an additional exporter in the Gardener collectors pointing to it, which brings back mutating their configuration. It duplicates infrastructure that already receives the signals and adds another component to maintain.
+An additional collector per seed or per shoot control plane would need either an additional fluent-bit output or an additional exporter in the Gardener collectors pointing to it, which brings back mutating their configuration. An additional fluent-bit output would also not include the data plane logs from the shoot `kube-system` namespace, since they arrive at Gardener's collectors directly. It duplicates infrastructure that already receives the signals and adds another component to maintain.
 
 ### A controller that patches the collectors
 
