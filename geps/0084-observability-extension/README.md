@@ -68,7 +68,7 @@ The `garden` class is configured in `Garden.spec.extensions[]` and covers the co
 apiVersion: operator.gardener.cloud/v1alpha1
 kind: Extension
 metadata:
-  name: observability
+  name: observability-config
 spec:
   resources:
     - kind: Extension
