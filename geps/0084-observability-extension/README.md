@@ -58,7 +58,7 @@ The `garden` class is configured in `Garden.spec.extensions[]` and covers the co
 - An invalid configuration prevents the collector from starting, which stops all pipelines of the affected collector, including Gardener's. The extension validates the structure of the fragment before it is accepted and again on mutation (see [Validation](#validation)). Errors inside a component's configuration only show up when the collector starts.
 - A `Seed`-level change affects all shoot control plane collectors on the seed at once. A `Garden`-level change only affects the collector in the runtime cluster.
 - Injected pipelines share the receiver with Gardener's pipelines. Additional processors and exporters increase the resource consumption of the collector and can degrade its performance. A custom backend that is unavailable or misbehaves can degrade all pipelines of the collector, including Gardener's.
-- The webhook uses `failurePolicy: Fail`. With `Ignore`, an outage would drop the injected pipelines on the next apply. Signals would then stop reaching the custom backend without any error in the `Seed` or `Garden` status. With `Fail`, an outage blocks the apply of the collector and thereby the reconciliation of the `Garden`, the `Seed` and the shoots on that seed until the webhook is back. It also makes the health checks of the affected `ManagedResource`s fail, since `gardener-resource-manager` cannot apply them. Since the extension is installed on every seed, this also applies to seeds without an `Extension` of type `observability`.
+- The webhook uses `failurePolicy: Fail`. With `Ignore`, an outage would drop the injected pipelines on the next apply. Signals would then stop reaching the custom backend without any error in the `Seed` or `Garden` status. With `Fail`, an outage blocks the apply of the collector and thereby the reconciliation of the `Garden`, the `Seed` and the shoots on that seed until the webhook is back. It also makes the health checks of the affected `ManagedResource`s fail, since `gardener-resource-manager` cannot apply them.
 
 ## Design Details
 
@@ -78,8 +78,6 @@ spec:
         - garden
         - seed
 ```
-
-With `policy: Always`, the extension is installed on every seed but only changes the collectors of seeds that list it in `Seed.spec.extensions[]`.
 
 The extension controller serves the mutating webhook that changes the collectors (see [Webhook](#webhook)). For the `seed` class, it copies the secrets listed in `collector.secrets` into every shoot control plane namespace on the seed. This includes namespaces that are created later, e.g., for new shoots or after a control plane migration. It also triggers the webhook again when the `providerConfig` or a referenced secret changes (see [Notes/Constraints/Caveats](#notesconstraintscaveats)).
 
@@ -219,7 +217,7 @@ The webhook mounts the secrets listed in `collector.secrets` read-only at `/etc/
 ## Drawbacks
 
 - The extension mutates resources that Gardener owns. Renames of the collector resource, its labels, its receivers or its exporters in `gardener/gardener` break the injected pipelines, which is why this GEP asks to document them as a stable interface.
-- A mutating webhook with `failurePolicy: Fail` is an additional dependency for `Garden`, `Seed` and `Shoot` reconciliations on every seed and on the runtime cluster if the `Garden` lists the extension.
+- A mutating webhook with `failurePolicy: Fail` is an additional dependency for `Garden`, `Seed` and `Shoot` reconciliations on every seed that lists the extension and on the runtime cluster if the `Garden` lists the extension.
 - A misconfigured processor or exporter in the `seed` class affects all shoot control plane collectors on the seed.
 
 ## Alternatives
