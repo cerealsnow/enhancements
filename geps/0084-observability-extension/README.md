@@ -42,7 +42,7 @@ Since `gardener-resource-manager` would revert changes to the collectors, a muta
 
 The webhook only adds processors, exporters, connectors, pipelines and collector extensions. Receivers cannot be added. The injected pipelines reference the receivers Gardener already configures.
 
-The collectors Gardener deploys only carry network policy labels for the in-cluster log backends, DNS and, if required, the `kube-apiserver`. To allow egress to custom backends, the webhook adds the label `networking.gardener.cloud/to-public-networks: allowed` to the collector if `allowPublicNetworks` is set and `networking.gardener.cloud/to-private-networks: allowed` if `allowPrivateNetworks` is set.
+The collectors Gardener deploys only carry network policy labels for the in-cluster log backends, DNS and, if required, the `kube-apiserver`. To allow egress to custom backends, the webhook adds the label `networking.gardener.cloud/to-public-networks: allowed` to the collector if `networking.allowPublicNetworks` is set and `networking.gardener.cloud/to-private-networks: allowed` if `networking.allowPrivateNetworks` is set.
 
 The `garden` class is configured in `Garden.spec.extensions[]` and covers the collector in the `garden` namespace of the garden runtime cluster, which `gardener-operator` deploys. The `seed` class is configured in `Seed.spec.extensions[]` and covers the collector in the `garden` namespace of the seed and all shoot control plane collectors on the seed. Both classes accept every component of Gardener's collector distribution and are validated the same way (see [Validation](#validation)). If the runtime cluster is also a seed, gardenlet skips the collector in its `garden` namespace and the collector deployed by `gardener-operator` receives both the `garden` and the `seed` configuration.
 
@@ -110,6 +110,12 @@ type CollectorSpec struct {
   // /etc/observability/<name>/. Config reads the files, e.g., via
   // ${file:/etc/observability/<name>/<key>}.
   Secrets []string
+  // Networking configures the egress of the collectors.
+  Networking *NetworkingSpec
+}
+
+// NetworkingSpec describes which networks the collectors may reach.
+type NetworkingSpec struct {
   // AllowPublicNetworks allows the collectors to reach public networks.
   AllowPublicNetworks bool
   // AllowPrivateNetworks allows the collectors to reach private networks.
@@ -134,7 +140,7 @@ Operators only deal with entry names, so the `Garden` and `Seed` can use the sam
 
 #### Example
 
-The following `Seed` sends all logs of the seed to a central Loki via OTLP. A `resource` processor adds the attribute `stage` to every log. The Loki credentials come from the secret `central-loki-credentials`, which is referenced as `central-loki` in `.spec.resources`. `allowPublicNetworks` lets the collectors reach the Loki endpoint. A `Garden` uses the same `providerConfig` for the collector in the runtime cluster.
+The following `Seed` sends all logs of the seed to a central Loki via OTLP. A `resource` processor adds the attribute `stage` to every log. The Loki credentials come from the secret `central-loki-credentials`, which is referenced as `central-loki` in `.spec.resources`. `networking.allowPublicNetworks` lets the collectors reach the Loki endpoint. A `Garden` uses the same `providerConfig` for the collector in the runtime cluster.
 
 ```yaml
 apiVersion: core.gardener.cloud/v1beta1
@@ -150,7 +156,8 @@ spec:
         collector:
           secrets:
             - central-loki
-          allowPublicNetworks: true
+          networking:
+            allowPublicNetworks: true
           config:
             extensions:
               basicauth/central:
@@ -203,7 +210,7 @@ The webhook mutates `OpenTelemetryCollector` resources on `CREATE` and `UPDATE`.
 
 If there is no matching `Extension` resource, the collector stays unchanged.
 
-The webhook mounts the secrets listed in `collector.secrets` read-only at `/etc/observability/<name>/` (see [API](#api)). It also adds the network policy labels if `allowPublicNetworks` or `allowPrivateNetworks` is set (see [Proposal](#proposal)). It adds a hash of the added configuration and the secret data to the pod annotations of the collector, so that secret changes roll out new pods.
+The webhook mounts the secrets listed in `collector.secrets` read-only at `/etc/observability/<name>/` (see [API](#api)). It also adds the network policy labels if `networking.allowPublicNetworks` or `networking.allowPrivateNetworks` is set (see [Proposal](#proposal)). It adds a hash of the added configuration and the secret data to the pod annotations of the collector, so that secret changes roll out new pods.
 
 ### Required Changes in gardener/gardener
 
