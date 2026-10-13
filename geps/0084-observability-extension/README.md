@@ -6,7 +6,7 @@ With the `OpenTelemetryCollector` feature gate, Gardener deploys an `OpenTelemet
 
 What is missing is a supported way for operators to hook into the collector configuration. It is fully owned by Gardener, so an operator who wants to route the collected signals to a custom backend or use custom processors has no extension point.
 
-This GEP proposes a new extension `gardener-extension-observability` of type `observability` in the Gardener GitHub organization. It deploys a mutating admission webhook which injects additional configuration into the `OpenTelemetryCollector` resources Gardener deploys. The injected configuration adds pipelines that reuse the receivers Gardener already configures and reference custom processors and exporters, without touching the pipelines Gardener configures. No additional collectors are deployed.
+This GEP proposes a new extension `gardener-extension-observability-config` of type `observability` in the Gardener GitHub organization. It deploys a mutating admission webhook which injects additional configuration into the `OpenTelemetryCollector` resources Gardener deploys. The injected configuration adds pipelines that reuse the receivers Gardener already configures and reference custom processors and exporters, without touching the pipelines Gardener configures. No additional collectors are deployed.
 
 The extension is configured via the `providerConfig` in the `Garden` and `Seed` resources. The `seed` class applies to all shoot control plane collectors on a seed without per-shoot configuration. Shoot owners keep using the existing [`gardener-extension-otelcol`](https://github.com/gardener/gardener-extension-otelcol) to export the signals of their control plane. For now this targets only logs, but the mechanism is signal-agnostic and covers metrics once Gardener routes them through the collectors.
 
@@ -20,7 +20,7 @@ The existing `gardener-extension-otelcol` deploys an additional collector per sh
 
 ### Goals
 
-- Introduce `gardener-extension-observability` as a new extension of type `observability` in the Gardener GitHub organization.
+- Introduce `gardener-extension-observability-config` as a new extension of type `observability` in the Gardener GitHub organization.
 - Allow operators to add custom configuration to the collectors Gardener deploys, reusing the receivers Gardener already configures.
 - Apply configuration at the `Garden` and `Seed` level, covering the `garden` namespace collectors and all shoot control plane collectors on a seed without per-shoot configuration.
 - Do not deploy additional collectors and do not touch the collector pipelines Gardener configures.
