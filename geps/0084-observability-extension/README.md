@@ -123,7 +123,7 @@ type NetworkingSpec struct {
 
 The webhook adds the content of `collector.config` to `.spec.config` of each collector.
 
-- Processors, exporters, extensions, connectors and pipelines are added next to Gardener's. If a name already exists in the collector, the change is rejected.
+- Processors, exporters, extensions, connectors and pipelines are added next to Gardener's. If a name already exists in the collector, the injected component overrides Gardener's. Overriding Gardener's components is at the operator's own risk.
 - Extensions listed under `service.extensions` are added to Gardener's list.
 - Pipelines can use Gardener's receivers and exporters in addition to the components from `collector.config`.
 
@@ -191,7 +191,7 @@ spec:
 
 ### Validation
 
-The admission component validates the `providerConfig` when a `Garden` or `Seed` is saved. Name collisions and references to Gardener's components depend on the actual collector, so the webhook checks them when it mutates a collector.
+The admission component validates the `providerConfig` when a `Garden` or `Seed` is saved. References to Gardener's components depend on the actual collector, so the webhook checks them when it mutates a collector.
 
 - Every component type must be part of Gardener's collector distribution, e.g., `otlphttp`. The configuration inside a component is not validated.
 - `receivers` cannot be configured. Under `service`, only `pipelines` and `extensions` are allowed.
